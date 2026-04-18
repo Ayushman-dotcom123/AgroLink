@@ -1,0 +1,160 @@
+What's built in the backend so far
+The structure is solid. Here's what exists:
+
+backend/
+  server.js          ← Express app, middleware, route registration
+  config/
+    db.js            ← MySQL connection pool
+    firebase-admin.js← Firebase Admin SDK init
+  middleware/
+    auth.js          ← JWT verification middleware
+  routes/
+    auth.js          ← Register, Login, /me (email+password)
+    firebase-auth.js ← Google/Phone login via Firebase token
+    crops.js         ← Crop listings CRUD
+    orders.js        ← Order management
+    farms.js         ← Farm CRUD
+    inventory.js     ← Inventory CRUD
+    expenses.js      ← Expense/income tracking
+    weather.js       ← OpenWeatherMap integration ✅ (key set)
+    ai.js            ← AI crop recommendations
+    admin.js         ← Admin operations
+    payments.js      ← Razorpay integration
+    chatbot.js       ← Agriculture chatbot
+    soil.js          ← Soil analysis (mock)
+    crop-disease.js  ← Disease detection (mock)
+What's actually working right now:
+
+Weather API — live data with your OpenWeatherMap key
+Firebase auth — Google + Phone OTP verified
+Chatbot — works without MySQL (falls back gracefully)
+Image upload — multer saves files locally
+What's NOT working (because MySQL is offline):
+
+Login/Register with email+password
+Saving farms, crops, orders, inventory, expenses to database
+Everything that needs persistent data
+The core problem — MySQL is offline
+Everything else is ready. The single blocker is the database. Here's what you need to do:
+
+Step 1 — Install MySQL
+
+You likely have it installed (you have MySQL tab open in your browser). Check if it's running:
+
+# In a new terminal
+mysql -u root -p
+If it connects, great. If not, open MySQL Workbench or MySQL Notifier and start the service.
+
+Step 2 — Create the database
+
+-- In MySQL Workbench or terminal
+source D:/Projects/AgroLink/agrolink/database/schema.sql
+source D:/Projects/AgroLink/agrolink/database/seed.sql
+source D:/Projects/AgroLink/agrolink/database/chatbot_seed.sql
+Step 3 — Set your MySQL password in .env
+
+DB_PASSWORD=your_mysql_root_password
+That's literally it. Once MySQL is running and the schema is loaded, the entire backend comes alive.
+
+Backend concepts — learn through this project
+Here's how the backend works, explained through AgroLink's actual code:
+
+1. What is a backend?
+
+The frontend (React) runs in the user's browser. It can't directly touch a database — that would be a security disaster. The backend is a middleman server that:
+
+Receives requests from the frontend
+Validates them
+Talks to the database
+Returns data
+Browser (React) → HTTP Request → Express Server → MySQL → Response → Browser
+2. Express.js — the web framework
+
+server.js is the entry point. Think of it like a traffic controller:
+
+app.use('/api/auth', require('./routes/auth'))   // all /api/auth/* goes here
+app.use('/api/crops', require('./routes/crops')) // all /api/crops/* goes here
+Each route file handles one "domain" of your app.
+
+3. Routes — what they are
+
+A route is a URL + HTTP method + handler function:
+
+// GET /api/crops — fetch all crops
+router.get('/', auth, async (req, res) => {
+  const [crops] = await db.query('SELECT * FROM crops WHERE is_available = 1')
+  res.json(crops)
+})
+
+// POST /api/crops — create a crop listing
+router.post('/', auth, async (req, res) => {
+  const { name, price_per_kg, quantity_kg } = req.body
+  await db.query('INSERT INTO crops (name, price_per_kg, ...) VALUES (?, ?, ...)', [name, price_per_kg, ...])
+  res.status(201).json({ success: true })
+})
+4. Middleware — runs before your route handler
+
+auth.js middleware verifies the JWT token. Any route with auth as second argument requires login:
+
+router.get('/me', auth, async (req, res) => {
+  // req.user is set by the auth middleware
+  res.json(req.user)
+})
+Without auth, the route is public (like the marketplace listing).
+
+5. The request/response cycle
+
+1. Frontend sends: POST /api/auth/login { email, password }
+2. Express receives it
+3. auth.js route handler runs
+4. Queries MySQL: SELECT * FROM users WHERE email = ?
+5. bcrypt compares password hash
+6. If valid: creates JWT token
+7. Returns: { token, user }
+8. Frontend stores token in Zustand
+9. Every future request sends: Authorization: Bearer <token>
+10. auth middleware verifies token on protected routes
+6. Environment variables (.env)
+
+Never hardcode secrets. .env keeps them out of your code:
+
+JWT_SECRET=...        ← signs/verifies tokens
+DB_PASSWORD=...       ← database password
+OPENWEATHER_API_KEY=  ← third-party API
+process.env.JWT_SECRET reads them in code.
+
+7. The database layer
+
+db.js
+ creates a connection pool — a set of reusable database connections so you don't open/close one per request:
+
+const pool = mysql.createPool({ host, user, password, database })
+// Usage anywhere:
+const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email])
+The ? placeholders prevent SQL injection — never concatenate user input directly into queries.
+
+What to do next — priority order
+Priority 1 — Get MySQL running (unlocks everything)
+
+Start MySQL service
+Run the 3 SQL files
+Set DB_PASSWORD in .env
+Restart backend — you'll see ✅ instead of ❌
+Priority 2 — Connect frontend pages to real API
+
+Right now most pages use hardcoded sample data. Once MySQL is up, pages need to call the API instead. For example, the marketplace currently shows SAMPLE_CROPS — it should call GET /api/crops.
+
+I can do this for you page by page once MySQL is running.
+
+Priority 3 — Test the full flow
+
+Register as farmer → data saved to MySQL
+Add a farm → saved to farms table
+List a crop → saved to crops table
+Customer buys → order created in orders table
+Admin approves farmer → farmers.is_approved = true
+Priority 4 — Razorpay payments
+
+Add your Razorpay key to .env and the payment flow works.
+
+The single most important thing right now: get MySQL running. Tell me when it's up and I'll wire every frontend page to the real backend data.

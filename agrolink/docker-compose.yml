@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: agrolink-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-agrolink123}
+      MYSQL_DATABASE: agrolink_db
+      MYSQL_USER: agrolink
+      MYSQL_PASSWORD: ${DB_PASSWORD:-agrolink123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: agrolink-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: mysql
+      DB_USER: agrolink
+      DB_PASSWORD: ${DB_PASSWORD:-agrolink123}
+      DB_NAME: agrolink_db
+      JWT_SECRET: ${JWT_SECRET:-change_this_in_production}
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./backend/uploads:/app/uploads
+
+  frontend:
+    build: ./frontend
+    container_name: agrolink-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api}
+      NEXT_PUBLIC_RAZORPAY_KEY: ${RAZORPAY_KEY_ID}
+      NEXT_PUBLIC_OPENWEATHER_KEY: ${OPENWEATHER_API_KEY}
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
